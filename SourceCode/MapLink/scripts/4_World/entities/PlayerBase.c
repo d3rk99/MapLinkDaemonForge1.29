@@ -198,8 +198,12 @@ modded class PlayerBase extends ManBase
 	void SavePlayerToUApiForTransfer(string dstServer, string arrivalPoint)
 	{
 		if (!GetGame().IsDedicatedServer() || !m_MapLinkGUIDCache || !m_MapLinkNameCache)
+		{
+			ML129Warn("SavePlayerToU start failed: missing dedicated server context or cached identity");
 			return;
+		}
 
+		ML129Log("SavePlayerToU start transfer player=" + m_MapLinkNameCache + " uid=" + m_MapLinkGUIDCache + " source=" + UApiConfig().ServerID + " target=" + dstServer + " arrivalPoint=" + arrivalPoint);
 		m_TransferPoint = arrivalPoint;
 		PlayerDataStore ds = new PlayerDataStore(this);
 		ds.ML_SetServerId(dstServer);
@@ -208,12 +212,14 @@ modded class PlayerBase extends ManBase
 		UApi().db(PLAYER_DB).Save("MapLink", m_MapLinkGUIDCache, ds.ToJson());
 
 		UApi().db(PLAYER_DB).PublicSave("MapLink", m_MapLinkGUIDCache, SimpleValueStore.StoreValue(dstServer + "~" + arrivalPoint), NULL, "");
+		ML129Log("SavePlayerToU success transfer player=" + m_MapLinkNameCache + " uid=" + m_MapLinkGUIDCache + " target=" + dstServer);
 	}
 	
 	void SavePlayerToUApi()
 	{
 		if (m_MapLinkGUIDCache && m_MapLinkNameCache && GetGame().IsDedicatedServer())
 		{
+			ML129Log("SavePlayerToU start player=" + m_MapLinkNameCache + " uid=" + m_MapLinkGUIDCache + " server=" + UApiConfig().ServerID);
 			MLLog.Debug("Saving Player to API " + m_MapLinkNameCache + "(" + m_MapLinkGUIDCache + ")" + " Health:  " + GetHealth("","Health") + " PlayTime: " +  StatGet(AnalyticsManagerServer.STAT_PLAYTIME) + " IsUnconscious: " + IsUnconscious() + " IsRestrained: " + IsRestrained());
 			PlayerDataStore teststore = new PlayerDataStore(PlayerBase.Cast(this));
 			UApi().db(PLAYER_DB).Save("MapLink", m_MapLinkGUIDCache, teststore.ToJson());
@@ -227,8 +233,10 @@ modded class PlayerBase extends ManBase
 			}
 
 			//NotificationSystem.SimpleNoticiation("Your Data has been saved to the API", "Notification","Notifications/gui/data/notifications.edds", -16843010, 10, this.GetIdentity());
+			ML129Log("SavePlayerToU success player=" + m_MapLinkNameCache + " uid=" + m_MapLinkGUIDCache);
 		} else 
 		{
+			ML129Warn("SavePlayerToU fail: missing cached identity or not dedicated server");
 			MLLog.Debug("Failed to save player to API");
 		}
 	}
@@ -295,37 +303,56 @@ modded class PlayerBase extends ManBase
 	{
 		super.OnUApiLoad(data);
 
+		if (!data)
+		{
+			ML129Warn("restore failure reason: OnUApiLoad data null");
+			return;
+		}
+
 		int i = 0;
 		
-		for (i = 0; i < GetPlayerStats().GetPCO().Get().Count(); i++)
+		if (GetPlayerStats() && GetPlayerStats().GetPCO() && data.m_Stats)
 		{
-			PlayerStatBase TheStat;
-			float statvalue;
-			if (Class.CastTo(TheStat, GetPlayerStats().GetPCO().Get().Get(i)) && data.ReadStat(TheStat.GetLabel(), statvalue))
+			for (i = 0; i < GetPlayerStats().GetPCO().Get().Count(); i++)
 			{
-				TheStat.SetByFloatEx(statvalue);
-			} else if (TheStat) 
-			{
-				MLLog.Err("Failed to set stat for " + TheStat.GetLabel());
+				PlayerStatBase TheStat;
+				float statvalue;
+				if (Class.CastTo(TheStat, GetPlayerStats().GetPCO().Get().Get(i)) && data.ReadStat(TheStat.GetLabel(), statvalue))
+				{
+					TheStat.SetByFloatEx(statvalue);
+				} else if (TheStat) 
+				{
+					ML129Warn("restore failure reason: failed to set stat " + TheStat.GetLabel());
+					MLLog.Err("Failed to set stat for " + TheStat.GetLabel());
+				}
 			}
 		}
 		
-		for (i = 0; i < data.m_Modifiers.Count(); i++)
+		if (data.m_Modifiers)
 		{
-			if (data.m_Modifiers.Get(i))
+			for (i = 0; i < data.m_Modifiers.Count(); i++)
 			{
-				ModifierBase mdfr = m_ModifiersManager.GetModifier(data.m_Modifiers.Get(i).ID());
-				if (mdfr.IsTrackAttachedTime() && data.m_Modifiers.Get(i).Value() >= 0)
+				if (data.m_Modifiers.Get(i) && m_ModifiersManager)
 				{
-					mdfr.SetAttachedTime(data.m_Modifiers.Get(i).Value());
+					ModifierBase mdfr = m_ModifiersManager.GetModifier(data.m_Modifiers.Get(i).ID());
+					if (mdfr && mdfr.IsTrackAttachedTime() && data.m_Modifiers.Get(i).Value() >= 0)
+					{
+						mdfr.SetAttachedTime(data.m_Modifiers.Get(i).Value());
+					}
+					m_ModifiersManager.ActivateModifier(data.m_Modifiers.Get(i).ID(), EActivationType.TRIGGER_EVENT_ON_CONNECT);
 				}
-				m_ModifiersManager.ActivateModifier(data.m_Modifiers.Get(i).ID(), EActivationType.TRIGGER_EVENT_ON_CONNECT);
 			}
 		}
 
-		for(i = 0; i < data.m_Agents.Count(); i++)
+		if (data.m_Agents && m_AgentPool)
 		{
-			m_AgentPool.SetAgentCount(data.m_Agents.Get(i).ID(), data.m_Agents.Get(i).Value());
+			for(i = 0; i < data.m_Agents.Count(); i++)
+			{
+				if (data.m_Agents.Get(i))
+				{
+					m_AgentPool.SetAgentCount(data.m_Agents.Get(i).ID(), data.m_Agents.Get(i).Value());
+				}
+			}
 		}
 
 		data.m_TransferPoint = "";
@@ -469,9 +496,11 @@ modded class PlayerBase extends ManBase
 	{
 		if (GetIdentity())
 		{
+			ML129Log("source player cleanup start player=" + GetIdentity().GetName() + " uid=" + GetIdentity().GetId() + " transferPoint=" + m_TransferPoint);
 			MLLog.Info("Killing for transfering Player: " + GetIdentity().GetName() + " (" + GetIdentity().GetId() +  ")");
 		} else
 		{
+			ML129Log("source player cleanup start player=NULL uid=NULL transferPoint=" + m_TransferPoint);
 			MLLog.Info("Killing for transfering Player: NULL (NULL)");
 		}
 
@@ -483,7 +512,14 @@ modded class PlayerBase extends ManBase
 	{
 		if (GetGame().IsClient())
 		{
-			MLLog.Debug("Player: " + GetIdentity().GetId() + " is requesting to travel to " + arrivalPoint + " on Server: " + serverName);
+			string clientUid = "NULL";
+			if (GetIdentity())
+			{
+				clientUid = GetIdentity().GetId();
+			}
+
+			ML129Log("transfer started client uid=" + clientUid + " target=" + serverName + " arrivalPoint=" + arrivalPoint);
+			MLLog.Debug("Player: " + clientUid + " is requesting to travel to " + arrivalPoint + " on Server: " + serverName);
 			RPCSingleParam(MAPLINK_REQUESTTRAVEL, new Param2<string, string>(arrivalPoint,  serverName), true, NULL);
 		}
 
@@ -509,7 +545,16 @@ modded class PlayerBase extends ManBase
 				}
 			}
 
-			MLLog.Debug("Player: " + GetIdentity().GetName() + "("+ GetIdentity().GetId() + ") is requesting to travel to " + arrivalPoint + " on Server: " + serverName);
+			string serverUid = "NULL";
+			string serverNamePlayer = "NULL";
+			if (GetIdentity())
+			{
+				serverUid = GetIdentity().GetId();
+				serverNamePlayer = GetIdentity().GetName();
+			}
+
+			ML129Log("transfer started source=" + UApiConfig().ServerID + " target=" + serverName + " uid=" + serverUid + " steam64=" + serverUid + " arrivalPoint=" + arrivalPoint);
+			MLLog.Debug("Player: " + serverNamePlayer + "("+ serverUid + ") is requesting to travel to " + arrivalPoint + " on Server: " + serverName);
 			UApiDoTravel(arrivalPoint, serverName);
 		}
 	}
@@ -536,6 +581,7 @@ modded class PlayerBase extends ManBase
 			SavePlayerToUApiForTransfer(serverData.Name, arrivalPoint);
 			MLLog.Info("Player: " + GetIdentity().GetName() + " (" + GetIdentity().GetId() +  ") Sending to Server: " + serverData.Name + "(" + serverData.IP  + ":" + serverData.Port.ToString() + ") at ArrivalPoint: " + arrivalPoint);
 			GetRPCManager().SendRPC("MapLink", "RPCRedirectedKicked", new Param1<UApiServerData>(serverData), true, GetIdentity());
+			ML129Log("redirect sent uid=" + GetIdentity().GetId() + " target=" + serverData.Name + " ip=" + serverData.IP + " port=" + serverData.Port.ToString());
 			SetAllowDamage(false);
 			GetGame().GetCallQueue(CALL_CATEGORY_SYSTEM).CallLater(this.UApiKillAndDeletePlayer, 350, false);
 			return true;
@@ -565,6 +611,7 @@ modded class PlayerBase extends ManBase
 				SavePlayerToUApiForTransfer(serverName, arrivalPoint);
 				MLLog.Info("Player: " + GetIdentity().GetName() + " (" + GetIdentity().GetId() +  ") Sending to Server: " + serverName  + " at ArrivalPoint: " + arrivalPoint);
 				GetRPCManager().SendRPC("MapLink", "RPCRedirectedKicked", new Param1<UApiServerData>(serverData), true, GetIdentity());
+				ML129Log("redirect sent uid=" + GetIdentity().GetId() + " target=" + serverName + " ip=" + serverData.IP + " port=" + serverData.Port.ToString());
 				SetAllowDamage(false);
 				GetGame().GetCallQueue(CALL_CATEGORY_SYSTEM).CallLater(this.UApiKillAndDeletePlayer, 350, false);
 				return true;

@@ -114,7 +114,13 @@ modded class PlayerDataStore extends Managed
 	{
 		if (!player)
 		{ 
+			ML129Warn("restore failure reason: SetupPlayer player null guid=" + GUID);
 			return; 
+		}
+
+		if (!GetMapLinkConfig().EnableInventoryRestore)
+		{
+			ML129Log("inventory restore skipped guid=" + GUID + " reason=EnableInventoryRestore false");
 		}
 
 		int i = 0;
@@ -156,13 +162,17 @@ modded class PlayerDataStore extends Managed
 		player.SetBloodTypeVisible(m_HasBloodTypeVisible);
 		
 		
-		if (m_Attachments && m_Attachments.Count() > 0)
+		if (GetMapLinkConfig().EnableInventoryRestore && m_Attachments && m_Attachments.Count() > 0)
 		{
 			for (i = 0; i < m_Attachments.Count(); i++)
 			{
 				if (m_Attachments.Get(i))
 				{
 					m_Attachments.Get(i).Create(player);				
+				}
+				else
+				{
+					ML129Warn("restore failure reason: null top-level attachment guid=" + GUID + " index=" + i);
 				}
 			}
 		}

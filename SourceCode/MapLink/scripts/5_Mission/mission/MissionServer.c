@@ -36,6 +36,7 @@ modded class MissionServer extends MissionBase
 
 	void LoadPlayerFromUApiDB(int cid, int status, string oid, string data)
 	{	
+		ML129Log("UniversalAPI load response cid=" + cid + " uid=" + oid + " status=" + status);
       	if (status == UAPI_SUCCESS)
 		{  
 			//If its a success
@@ -47,12 +48,14 @@ modded class MissionServer extends MissionBase
 
 				if (dataload.IsValid() && dataload.GUID == oid)
 				{
+					ML129Log("UniversalAPI load success uid=" + oid + " sourceServer=" + dataload.m_Server + " transferPoint=" + dataload.m_TransferPoint);
 					MLLog.Info("Add Player to PlayerQue " + dataload.m_Name + "(" + dataload.GUID + ") Health:  " + dataload.m_Health + " PlayTime: " + dataload.m_TimeSurvivedValue + " Server: " + dataload.m_Server + " TransferPoint: " + dataload.m_TransferPoint);
 					m_PlayerDBQue.Set(oid, PlayerDataStore.Cast(dataload));
 				} else 
 				if (m_PlayerDBQue.Contains(oid)) 
 				{ 
 					//This shouldn't be needed any more
+					ML129Warn("UniversalAPI load fail invalid player data uid=" + oid);
 					MLLog.Log("Player is dead or data invlaid Removing Player from Queue " + oid);
 					m_PlayerDBQue.Remove(oid);
 				}
@@ -60,16 +63,19 @@ modded class MissionServer extends MissionBase
 				return;
 			}
 
+			ML129Warn("UniversalAPI load fail parse error cid=" + cid + " uid=" + oid);
 			MLLog.Err("LoadPlayerFromDB - Error Loading Data from the API - ID:" + cid + " - GUID: " + oid);
 			return;
       	} 
 
 		if (status == UAPI_EMPTY)
 		{
+			ML129Warn("UniversalAPI load fail empty response cid=" + cid + " uid=" + oid);
 			MLLog.Info("LoadPlayerFromDB - Empty Response - ID:" + cid + " - GUID: " + oid);
 			return;
 		}
 
+		ML129Warn("UniversalAPI load fail api status=" + status + " uid=" + oid);
         MLLog.Err("LoadPlayerFromDB - API CALL FAILED - CHECK OVER YOUR CONFIGS AND ENSURE THAT THE API IS RUNNING ID: " + oid + " S:" + status);
 	}
 
@@ -86,10 +92,12 @@ modded class MissionServer extends MissionBase
 		if (identity)
 		{
 			int cid = UApi().db(PLAYER_DB).Load("MapLink", identity.GetId(), this, "LoadPlayerFromUApiDB");	
+			ML129Log("UniversalAPI load start cid=" + cid + " uid=" + identity.GetId() + " steam64=" + identity.GetPlainId() + " server=" + UApiConfig().ServerID);
 			MLLog.Info("Requesting Player Data from DataBase Call ID:" + cid + " - GUID: " + identity.GetId());
 			//NotificationSystem.SimpleNoticiation("Requesting your login player Data From the API", "Notification","Notifications/gui/data/notifications.edds", -16843010, 10, identity);
 		} else 
 		{
+			ML129Warn("UniversalAPI load start failed uid=NULL");
 			MLLog.Info("Requesting Player Data from DataBase - GUID: NULL");
 		}
 
@@ -151,6 +159,7 @@ modded class MissionServer extends MissionBase
 					{
 						NotificationSystem.Create(new StringLocaliser("Map Link"), new StringLocaliser("#STR_MapLink_Redirect - " + CurServerData.RespawnServer), "set:maplink_icons image:redirect", -16843010, 16, identity);
 						GetRPCManager().SendRPC("MapLink", "RPCRedirectedKicked", new Param1<UApiServerData>(serverData), true, identity);
+						ML129Log("redirect sent uid=" + identity.GetId() + " target=" + CurServerData.RespawnServer + " reason=dead_or_unconscious");
 					}
 				}
 
@@ -177,7 +186,15 @@ modded class MissionServer extends MissionBase
 				{
 					// Not configured to receive here; send them to the saved destination
 					serverData = UApiServerData.Cast(GetMapLinkConfig().GetServer(fromServerName));
-					GetRPCManager().SendRPC("MapLink", "RPCRedirectedKicked", new Param1<UApiServerData>(serverData), true, identity);
+					if (serverData)
+					{
+						GetRPCManager().SendRPC("MapLink", "RPCRedirectedKicked", new Param1<UApiServerData>(serverData), true, identity);
+						ML129Log("redirect sent uid=" + identity.GetId() + " target=" + fromServerName + " reason=arrival_point_missing");
+					}
+					else
+					{
+						ML129Warn("redirect failed uid=" + identity.GetId() + " target=" + fromServerName + " reason=server data missing");
+					}
 					MLLog.Info("MapLink: arrival point '" + transferPoint + "' not on this server; redirecting to " + fromServerName);
 					m_PlayerDBQue.Remove(identity.GetId());
 					return false;
@@ -192,6 +209,7 @@ modded class MissionServer extends MissionBase
 				{
 					NotificationSystem.Create(new StringLocaliser("Map Link"), new StringLocaliser("#STR_MapLink_Redirecting"), "set:maplink_icons image:redirect", -16843010, 16, identity);
 					GetRPCManager().SendRPC("MapLink", "RPCRedirectedKicked", new Param1<UApiServerData>(serverData), true, identity);
+					ML129Log("redirect sent uid=" + identity.GetId() + " target=" + fromServerName + " reason=wrong_server");
 				}
 
 				m_PlayerDBQue.Remove(identity.GetId());
@@ -215,12 +233,20 @@ modded class MissionServer extends MissionBase
 			}
 
 			PlayerBase player = PlayerBase.Cast(PlayerDataStore.Cast(playerdata).CreateWithIdentity(PlayerIdentity.Cast(identity), pos));
+			ML129Log("inventory restore start uid=" + identity.GetId() + " source=" + fromServerName + " target=" + UApiConfig().ServerID + " transferPoint=" + transferPoint);
+			if (!player)
+			{
+				ML129Warn("restore failure reason: CreateWithIdentity returned null uid=" + identity.GetId() + " type=" + playerdata.m_Type);
+				m_PlayerDBQue.Remove(identity.GetId());
+				return false;
+			}
 			GetGame().SelectPlayer(identity, player);
 			InvokeOnConnect(player, identity);
 			SyncEvents.SendPlayerList();
 			ControlPersonalLight(player);
 			SyncGlobalLighting(player);
 			PlayerDataStore.Cast(playerdata).SetupPlayer(player, pos, ori);
+			ML129Log("inventory restore end uid=" + identity.GetId());
 
 			if (fromServerName != UApiConfig().ServerID && transferPoint != "") 
 			{
@@ -246,6 +272,12 @@ modded class MissionServer extends MissionBase
 	{
 		if (player && player.IsBeingTransfered())
 		{
+			string cleanupUid = "NULL";
+			if (player.GetIdentity())
+			{
+				cleanupUid = player.GetIdentity().GetId();
+			}
+			ML129Log("source player cleanup HandleBody kill uid=" + cleanupUid);
 			MLLog.Debug("HandleBody IsBeingTransfered Killing Player"); //Fail Safe
 			player.SetAllowDamage(true);
 			player.SetHealth("", "Health", 0);
@@ -256,6 +288,12 @@ modded class MissionServer extends MissionBase
 
 		if (player && (player.MapLinkShoudDelete() || player.IsBeingTransfered())) 
 		{
+			string deleteUid = "NULL";
+			if (player.GetIdentity())
+			{
+				deleteUid = player.GetIdentity().GetId();
+			}
+			ML129Log("source player cleanup HandleBody delete uid=" + deleteUid);
 			MLLog.Debug("HandleBody IsBeingTransfered Removing body");
 			// remove the body
 			player.Delete();	

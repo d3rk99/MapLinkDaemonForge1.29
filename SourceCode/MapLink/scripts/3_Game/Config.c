@@ -1,9 +1,16 @@
 class MapLinkConfig extends UApiConfigBase 
 {
 	string ConfigVersion;
-	static string CurrentVersion = "1";
+	static string CurrentVersion = "2";
 
 	int TravelCooldownSeconds;
+	bool EnableTransferDebugLogs;
+	bool EnableInventoryRestore;
+	bool EnableCargoRestore;
+	bool EnableHandsRestore;
+	bool EnableContainerRestore;
+	bool EnableAttachmentRestore;
+	bool EnableSafeRestoreMode;
 	
 	ref array<ref UApiServerData> Servers;
 	ref array<ref MapLinkArrivalPoint> ArrivalPoints;
@@ -36,6 +43,13 @@ class MapLinkConfig extends UApiConfigBase
 		ConfigVersion = "0";
 
 		TravelCooldownSeconds = 0;
+		EnableTransferDebugLogs = true;
+		EnableInventoryRestore = true;
+		EnableCargoRestore = true;
+		EnableHandsRestore = true;
+		EnableContainerRestore = true;
+		EnableAttachmentRestore = true;
+		EnableSafeRestoreMode = true;
 		LogLevel_File = 3;
 		LogLevel_API = 2;
 
@@ -61,6 +75,13 @@ class MapLinkConfig extends UApiConfigBase
 		if (!ConfigVersion || ConfigVersion != CurrentVersion)
 		{
 			ConfigVersion = CurrentVersion;
+			EnableTransferDebugLogs = true;
+			EnableInventoryRestore = true;
+			EnableCargoRestore = true;
+			EnableHandsRestore = true;
+			EnableContainerRestore = true;
+			EnableAttachmentRestore = true;
+			EnableSafeRestoreMode = true;
 			LogLevel_File = 3;
 			LogLevel_API = 2;
 			Save(); //Resave the upgrade Version Back to the server
@@ -326,4 +347,20 @@ static MapLinkConfig GetMapLinkConfig()
 	}
 
 	return m_MapLinkConfig;
+}
+
+static void ML129Log(string message)
+{
+	if (GetMapLinkConfig().EnableTransferDebugLogs)
+	{
+		MLLog.Info("[MapLink129] " + message);
+	}
+}
+
+static void ML129Warn(string message)
+{
+	if (GetMapLinkConfig().EnableTransferDebugLogs)
+	{
+		MLLog.Err("[MapLink129] " + message);
+	}
 }
