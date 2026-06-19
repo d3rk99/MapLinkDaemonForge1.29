@@ -1,0 +1,35 @@
+MapLinkDaemonForge DayZ 1.29 Diagnostics Build
+
+Branch:
+maplink-1.29-diagnostics
+
+Build drop:
+C:\MapLink129_BuildDrop
+
+Expected packed PBOs:
+MapLink.pbo
+MapLinkDayZDogCompatibility.pbo
+MapLinkTerjeCompatibility.pbo
+MapLink_ZenSkillsCompatibility.pbo
+ZenMapLinkChat.pbo
+_MapLinkBase.pbo
+_UAPIBase.pbo
+_UniversalApi.pbo
+
+Expected key:
+MapLink129.bikey
+
+Diagnostics prefix:
+[MapLink129]
+
+Primary changed source files:
+SourceCode\MapLink\scripts\3_Game\Config.c
+SourceCode\MapLink\scripts\4_World\entities\PlayerBase.c
+SourceCode\MapLink\scripts\4_World\entities\PlayerDataStore.c
+SourceCode\MapLink\scripts\4_World\entities\UApiEntityStore_MapLink129.c
+SourceCode\MapLink\scripts\5_Mission\mission\MissionServer.c
+
+Build notes:
+Packed and signed locally with DayZ Tools.
+All restore toggles default true.
+Safe restore mode defaults true for diagnostics.
